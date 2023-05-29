@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
+import torch.nn.functional as F
 
 # 멀티 모달 분류 모델 정의
 class MultiModalModel(nn.Module):
@@ -10,11 +10,18 @@ class MultiModalModel(nn.Module):
         # 텍스트 모듈 정의
         self.text_embedding = nn.Embedding(text_input_dim, 100)
         self.text_fc = nn.Linear(100, hidden_dim)
+        self.text_bn = nn.BatchNorm1d(hidden_dim*2)
+        self.text_relu = nn.ReLU()
+        self.text_dropout = nn.Dropout(0.5)
 
         # 이미지 모듈 정의
-        self.image_conv = nn.Conv2d(image_input_dim, 16, kernel_size=3, stride=1, padding=1)
+        self.image_conv1 = nn.Conv2d(image_input_dim, 32, kernel_size=3, stride=1, padding=1)
+        self.image_conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.image_maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.image_relu = nn.ReLU()
         self.image_fc = nn.Linear(16 * 128 * 128, hidden_dim)
+        self.image_bn = nn.BatchNorm1d(1)
+        self.image_dropout = nn.Dropout(0.5)
 
         # 멀티 모달 분류기 정의
         self.fc = nn.Linear(hidden_dim * 33, num_classes)
@@ -23,12 +30,21 @@ class MultiModalModel(nn.Module):
         # 텍스트 입력 처리
         text_embedded = self.text_embedding(text_input)
         text_output = self.text_fc(text_embedded).squeeze(0)
+        text_output = self.text_bn(text_output)
+        text_output = self.text_relu(text_output)
+        text_output = self.text_dropout(text_output)
 
         # 이미지 입력 처리
-        image_output = self.image_conv(image_input)
+        image_output = self.image_conv1(image_input)
         image_output = self.image_relu(image_output)
+        image_output = self.image_conv2(image_output)
+        image_output = self.image_relu(image_output)
+        image_output = self.image_maxpool(image_output)
         image_output = image_output.view(image_output.size(0), -1)
         image_output = self.image_fc(image_output).unsqueeze(1)
+        image_output = self.image_bn(image_output)
+        image_output = self.image_relu(image_output)
+        image_output = self.image_dropout(image_output)
 
         # 텍스트와 이미지 특성을 연결하여 멀티 모달 분류 수행
 

@@ -47,7 +47,7 @@ hidden_dim = 16
 num_classes = category_to_num.__len__()
 
 
-model = MultiModalModel(text_input_dim, image_input_dim, hidden_dim, num_classes)
+model = MultiModalModel(text_input_dim, image_input_dim, hidden_dim, num_classes).to(device)
 
 # 손실 함수와 옵티마이저 정의
 criterion = nn.CrossEntropyLoss()
