@@ -99,7 +99,10 @@ val_image = (val_image - val_image.mean()) / val_image.std()
 predicted = model(val_text.unsqueeze(0), val_image)
 _, predicted_labels = torch.max(predicted, 1)
 
-accuracy = np.mean(np.equal(predicted_labels.cpu(), val_labels.cpu()).numpy())
+val_labels = val_labels.cpu()
+predicted_labels = predicted_labels.cpu()
+
+accuracy = np.mean(np.equal(predicted_labels, val_labels).numpy())
 accuracy_percentage = accuracy * 100
 
 predicted_categories = map_numbers_to_text(predicted_labels, num_to_category)
