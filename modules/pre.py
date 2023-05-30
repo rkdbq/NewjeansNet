@@ -52,9 +52,9 @@ def preprocess(directory, image_size, tokenizer, vocab, max_seq_length, titles, 
                     print(f"이미지를 열 수 없습니다: {image_path}")
 
     # 이미지 텐서를 하나의 텐서로 결합
-    images = torch.stack(image_tensors)
-    texts = torch.stack(text_tensors)
-    answers = torch.tensor(answer_tensors)
+    images = torch.stack(image_tensors).cuda()
+    texts = torch.stack(text_tensors).cuda()
+    answers = torch.tensor(answer_tensors).cuda()
 
     return images, texts, answers
 
@@ -105,7 +105,7 @@ import shutil
 import os
 
 
-def create_folders(label_list):
+def create_folders(label_list, parent_folder):
     parent_folder = "C:\\Codes\\newjeansNet\\data\\jbnu-swuniv-ai\\val"  # 폴더를 생성할 부모 폴더 경로를 지정해주세요
 
     for label in label_list:
@@ -114,10 +114,10 @@ def create_folders(label_list):
         os.makedirs(folder_path, exist_ok=True)
         print(f"Created folder: {folder_name}")
 
-def move_files_in_folders(folders, percentage):
-    for folder_name in folders:
+def move_files_in_folders(label_list, percentage, from_path, to_path):
+    for folder_name in label_list:
         folder_path = os.path.join(
-            "C:\\Codes\\newjeansNet\\data\\jbnu-swuniv-ai\\train", folder_name
+            from_path, folder_name
         )  # 부모 폴더 경로와 각 폴더 이름을 조합하여 경로 생성
         file_list = os.listdir(folder_path)
 
@@ -127,7 +127,7 @@ def move_files_in_folders(folders, percentage):
         for file_name in files_to_move:
             source_path = os.path.join(folder_path, file_name)
             destination_path = os.path.join(
-                "C:\\Codes\\newjeansNet\\data\\jbnu-swuniv-ai\\val", folder_name, file_name
+                to_path, folder_name, file_name
             )  # 이동할 폴더 경로 생성
             shutil.move(source_path, destination_path)
             print(f"Moved: {file_name}")
