@@ -2,6 +2,7 @@ import torch, random
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+from tqdm import tqdm
 from modules.multimodal import *
 from modules.pre import *
 from modules.post import *
@@ -16,8 +17,10 @@ label_list = ["Arts, Photography", "Biographies, Memoirs", "Calendars", "Childre
 #pathes
 base_path ="C:\\Codes\\newjeansNet\\"
 train_data_csv_path = base_path + "data\\jbnu-swuniv-ai\\train_data.csv"
+test_data_csv_path = base_path + "data\\jbnu-swuniv-ai\\test_data.csv"
 train_img_path = base_path + "data\\jbnu-swuniv-ai\\train\\"
 val_img_path = base_path + "data\\jbnu-swuniv-ai\\val\\"
+test_img_path = base_path + "data\\jbnu-swuniv-ai\\test\\"
 result_csv_path = base_path + "results.csv"
 
 # create validation folders [PREPROCESS]
@@ -26,11 +29,16 @@ result_csv_path = base_path + "results.csv"
 
 # hyperparameters
 max_seq_length = 32
-resize_size = (16, 16) # image size
-batch_size = 128
-learning_rate = 0.001
+resize_size = (256, 384) # image size
+batch_size = 32
+learning_rate = 0.0025
+num_epochs = 16
+
+val_iter = 20 # val_iter * batch_size 개의 데이터에 대해 Validation 측정함
 
 #################
+
+torch.backends.cudnn.enabled = False
 
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
@@ -52,6 +60,8 @@ titles, labels = csv_to_dict(train_data_csv_path, category_to_num)
 tokenizer = data.get_tokenizer("basic_english")  # 공백을 기준으로 텍스트를 토큰화
 vocab = make_vocabulary(titles.values(), tokenizer)
 
+test_titles = csv_to_dict(test_data_csv_path, category_to_num, is_test=True)
+
 total = total_count(train_img_path)
 
 # 모델 초기화
@@ -71,7 +81,6 @@ print(f"total data set size: {total}")
 print("Learning start")
 
 # 모델 학습
-num_epochs = 1
 for epoch in range(num_epochs):
     for iter in range(total//batch_size):
         image_input, text_input, labels_input = preprocess(train_img_path, resize_size, tokenizer, vocab, max_seq_length, titles, labels, batch_size)
@@ -92,20 +101,33 @@ for epoch in range(num_epochs):
     # 학습 과정 출력
     print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item()}")
 
-# 학습된 모델로 예측 수행
-val_image, val_text, val_labels = preprocess(val_img_path, resize_size, tokenizer, vocab, max_seq_length, titles, labels, batch_size)
-val_image = (val_image - val_image.mean()) / val_image.std()
+# Test
+total_predicted_categories = np.zeros(0)
+for st_idx in tqdm(range(0, 29435, batch_size), desc="Test"):
+    test_image, test_text = preprocess_for_test(test_img_path, resize_size, tokenizer, vocab, max_seq_length, test_titles, batch_size, st_idx)
+    test_image = (test_image - test_image.mean()) / test_image.std()
 
-predicted = model(val_text.unsqueeze(0), val_image)
-_, predicted_labels = torch.max(predicted, 1)
+    predicted = model(test_text.unsqueeze(0), test_image)
+    _, predicted_labels = torch.max(predicted, 1)
+    predicted_labels = predicted_labels.cpu()
+    predicted_categories = map_numbers_to_text(predicted_labels, num_to_category)
+    total_predicted_categories = np.concatenate((total_predicted_categories, predicted_categories), axis=0)
 
-val_labels = val_labels.cpu()
-predicted_labels = predicted_labels.cpu()
+numpy_array_to_csv(total_predicted_categories, result_csv_path)
 
-accuracy = np.mean(np.equal(predicted_labels, val_labels).numpy())
-accuracy_percentage = accuracy * 100
+# Validation
+total = 0
+for iter in tqdm(range(val_iter), desc="Validation"):
+    val_image, val_text, val_labels = preprocess(val_img_path, resize_size, tokenizer, vocab, max_seq_length, titles, labels, batch_size)
+    val_image = (val_image - val_image.mean()) / val_image.std()
 
-predicted_categories = map_numbers_to_text(predicted_labels, num_to_category)
-numpy_array_to_csv(predicted_categories, result_csv_path)
+    predicted = model(val_text.unsqueeze(0), val_image)
+    _, predicted_labels = torch.max(predicted, 1)
 
-print(f"Accuracy: {accuracy_percentage:.2f}%")
+    val_labels = val_labels.cpu()
+    predicted_labels = predicted_labels.cpu()
+
+    total = total + np.sum(np.equal(predicted_labels, val_labels).numpy())
+    
+accuracy_percentage = total / (20 * batch_size) * 100
+print(f"Validation Accuracy: {accuracy_percentage:.2f}%")

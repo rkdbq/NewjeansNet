@@ -3,17 +3,24 @@ from PIL import Image
 from torchvision import transforms
 from torchtext import data
 
-def csv_to_dict(file_path, label_num):
+def csv_to_dict(file_path, label_num, is_test=False):
     title_dict = {}
     label_dict = {}
-
-    with open(file_path, 'r') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            key = row.pop(reader.fieldnames[1])
-            title_dict[key] = row.pop(reader.fieldnames[2])
-            label_dict[key] = label_num[row.pop(reader.fieldnames[3])]
-    return title_dict, label_dict
+    if is_test:
+        with open(file_path, 'r') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                key = row.pop(reader.fieldnames[1])
+                title_dict[key] = row.pop(reader.fieldnames[2])
+        return title_dict
+    else:
+        with open(file_path, 'r') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                key = row.pop(reader.fieldnames[1])
+                title_dict[key] = row.pop(reader.fieldnames[2])
+                label_dict[key] = label_num[row.pop(reader.fieldnames[3])]
+        return title_dict, label_dict
 
 def total_count(directory):
     total_file_num = 0
@@ -58,9 +65,39 @@ def preprocess(directory, image_size, tokenizer, vocab, max_seq_length, titles, 
 
     return images, texts, answers
 
+def preprocess_for_test(directory, image_size, tokenizer, vocab, max_seq_length, titles, batch_size, st_idx):
+    image_tensors = []
+    text_tensors = []
+
+    preprocess_image = transforms.Compose([
+        transforms.Resize(image_size),
+        transforms.ToTensor(),
+    ])
+    for id in range(st_idx, st_idx + batch_size):
+        if id > 29435:
+            break
+        file = f"{id}.jpg"
+        image_path = os.path.join(directory, file)
+        try:
+            with Image.open(image_path) as image:
+                # 이미지 전처리 및 텐서로 변환
+                tensor = preprocess_image(image.convert("RGB"))
+                image_tensors.append(tensor)
+            tensor = preprocess_text(titles[file], tokenizer, vocab, max_seq_length)
+            text_tensors.append(tensor)
+        except IOError:
+            print(f"이미지를 열 수 없습니다: {image_path}")
+                
+
+    # 이미지 텐서를 하나의 텐서로 결합
+    images = torch.stack(image_tensors).cuda()
+    texts = torch.stack(text_tensors).cuda()
+
+    return images, texts
+
 def preprocess_text(sentence, tokenizer, vocab, max_length):
     tokenized = tokenizer(sentence)  # 문장을 토큰화
-    encoded = [vocab[token] for token in tokenized]  # 토큰을 정수로 인코딩
+    encoded = [vocab.get(token, vocab['<UNK>']) for token in tokenized]  # 토큰을 정수로 인코딩
 
     # 시퀀스 길이 맞추기
     padded = encoded[:max_length] + [0] * max(0, max_length - len(encoded))
@@ -72,12 +109,13 @@ def preprocess_text(sentence, tokenizer, vocab, max_length):
 
 def make_vocabulary(titles, tokenizer):
     vocab = {}
-    counter = 0
+    counter = 2
     for title in titles:
         for token in tokenizer(title):
             if token not in vocab:
                 vocab[token] = counter
                 counter = counter + 1
+    vocab["<UNK>"] = 1
     return vocab
 
 def make_label_number(label_list):
